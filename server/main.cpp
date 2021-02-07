@@ -1,13 +1,25 @@
-#include <iostream>
-#include <stdio.h>
-#include <string.h>
-#include <boost/asio.hpp>
+#include "server.cpp"
 
-int main()
+int main(int argc, char* argv[])
 {
-    std::vector<char>buffer_2{11, 22, 33, 44, 55};
-    std::string str_ = boost::asio::ip::address_v4(ntohl(*(uint32_t*)(&buffer_2[4]))).to_string();
-    std::cout<<str_<<'\n';
+  try
+  {
+    if (argc != 2)
+    {
+      std::cerr << "Usage: async_tcp_echo_server <port>\n";
+      return 1;
+    }
+
+    boost::asio::io_context io_context;
+
+    server s(io_context, std::atoi(argv[1]));
+
+    io_context.run();
+  }
+  catch (std::exception& e)
+  {
+    std::cerr << "Exception: " << e.what() << "\n";
+  }
 
   return 0;
 }

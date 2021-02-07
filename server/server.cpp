@@ -11,20 +11,21 @@ class session: public std::enable_shared_from_this<session>
 public:
     session(tcp::socket socket):
         socket_(std::move(socket)),
-        resolver(socket.get_executor().context())
+        resolver_(socket.get_executor().context())
     {
     }
       void start()
     {
         first_greetings();
     }
+
 private:
     tcp::socket socket_;
     std::vector<unsigned char>buffer_;
     std::vector<char>buffer_2;
     std::string hostname;
     std::string port;
-    tcp::resolver resolver;
+    tcp::resolver resolver_;
 
     void first_greetings()
     {
@@ -36,7 +37,7 @@ private:
             {
                 if (length < 3 || buffer_[0] != 0x05)
                 {
-                    throw std::invalid_argument("invalid message from client");
+                    return;
                 }
                 int counter = buffer_[1];
                 buffer_[1] = 0xFF;
@@ -46,9 +47,6 @@ private:
                 }
                 first_answering();
             }
-            else{
-                throw std::logic_error("request error");
-            }
         });
     }
     void first_answering(){
@@ -57,7 +55,7 @@ private:
                                  [this, self](boost::system::error_code ec, std::size_t length)
         {
             if(buffer_[1] == 0xFF)
-                throw std::invalid_argument("invalid second argument");
+                return;
             if(!ec){
                 read_request();
             }
@@ -72,7 +70,7 @@ private:
             {
                 if(length < 6 || buffer_[0] != 0x05 || buffer_[1] != 0x01 || buffer_[2] != 0x00 || buffer_[3] == 0x04)
                 {
-                    throw std::invalid_argument("error on read request");
+                    return;
                 }
                 switch(buffer_[3])
                 {
@@ -92,26 +90,71 @@ private:
                     break;
                 }
 
-                first_response();
+                second_response();
             }
     });
-};
-    void first_response(){
+    }
+    void second_response(){
         auto self(shared_from_this());
-        resolver.async_resolve(tcp::resolver::query({hostname, port}),
+        resolver_.async_resolve(tcp::resolver::query({hostname, port}),
             [this, self](const boost::system::error_code& ec, tcp::resolver::iterator it)
             {
                 if (!ec)
                 {
-                    connect(it);
-                }
-                else
-                {
-                    //response
+                    still_second_response(it);
                 }
             });
     }
-    void connect(tcp::resolver::iterator& it){
 
+    void still_second_response(tcp::resolver::iterator& it){
+        auto self(shared_from_this());
+        buffer_2[1] = 0x00;// maybe add some variants
+        boost::asio::async_write(socket_, boost::asio::buffer(buffer_2),
+                                 [this,self](const boost::system::error_code& ec, tcp::resolver::iterator it)
+        {
+            if (!ec)
+            {
+                first_connect(it);
+            }
+        }
+        );
     }
+    void first_connect(tcp::resolver::iterator& it){
+        auto self(shared_from_this());
+        boost::asio::async_connect(socket_, *it,
+                                   [this, self](const boost::system::error_code& ec)
+        {
+            if(!ec)
+            {
+                do_something();
+            }
+        });
+    }
+    void do_something();
+};
+class server
+{
+public:
+  server(boost::asio::io_context& io_context, short port)
+    : acceptor_(io_context, tcp::endpoint(tcp::v4(), port))
+  {
+    do_accept();
+  }
+
+private:
+  void do_accept()
+  {
+    acceptor_.async_accept(
+        [this](boost::system::error_code ec, tcp::socket socket)
+        {
+          if (!ec)
+          {
+            std::make_shared<session>(std::move(socket))->start();
+          }
+
+          do_accept();
+        });
+  }
+
+  tcp::acceptor acceptor_;
 };
