@@ -4,15 +4,19 @@
 #include <utility>
 #include <boost/asio.hpp>
 #include <string>
+#include <boost/endian/conversion.hpp>
 
 using boost::asio::ip::tcp;
 class session: public std::enable_shared_from_this<session>
 {
 public:
-    session(tcp::socket socket):
+    session(tcp::socket socket, boost::asio::io_context &io):
         socket_(std::move(socket)),
-        resolver_(socket.get_executor().context())
+        socket_server(io),
+        resolver_(io)
     {
+        buffer_.resize(1024);
+        buffer_2.resize(1024);
     }
       void start()
     {
@@ -21,6 +25,7 @@ public:
 
 private:
     tcp::socket socket_;
+    tcp::socket socket_server;
     std::vector<unsigned char>buffer_;
     std::vector<char>buffer_2;
     std::string hostname;
@@ -30,11 +35,13 @@ private:
     void first_greetings()
     {
         auto self(shared_from_this());
+        std::cerr<<"first_greetings ";
         socket_.async_read_some(boost::asio::buffer(buffer_),
                                 [this, self](boost::system::error_code ec, std::size_t length)
         {
             if(!ec)
             {
+                std::cerr<<"\n"<<length<<'\n';
                 if (length < 3 || buffer_[0] != 0x05)
                 {
                     return;
@@ -51,6 +58,7 @@ private:
     }
     void first_answering(){
         auto self(shared_from_this());
+        std::cerr<<"first_answering\n";
         boost::asio::async_write(socket_, boost::asio::buffer(buffer_, 2),
                                  [this, self](boost::system::error_code ec, std::size_t length)
         {
@@ -63,24 +71,25 @@ private:
     }
     void read_request(){
         auto self(shared_from_this());
+        std::cerr<<"read_request\n";
         socket_.async_read_some(boost::asio::buffer(buffer_2),
                                      [this, self](boost::system::error_code ec, std::size_t length)
         {
             if(!ec)
             {
-                if(length < 6 || buffer_[0] != 0x05 || buffer_[1] != 0x01 || buffer_[2] != 0x00 || buffer_[3] == 0x04)
+                if(length < 6 || buffer_2[0] != 0x05 || buffer_2[1] != 0x01 || buffer_2[2] != 0x00 || buffer_2[3] == 0x04)
                 {
                     return;
                 }
-                switch(buffer_[3])
+                switch(buffer_2[3])
                 {
                 case 0x01://IPv4
-                    hostname = boost::asio::ip::address_v4(ntohl(*(uint32_t*)(&buffer_2[4]))).to_string();
-                    port = std::to_string(ntohs(*((uint16_t*)&buffer_2[8])));
+                    hostname = boost::asio::ip::address_v4(boost::endian::big_to_native(*(uint32_t*)(&buffer_2[4]))).to_string();
+                    port = std::to_string(boost::endian::big_to_native(*((uint16_t*)&buffer_2[8])));
                     break;
                 case 0x03://domain name
                     hostname = std::string(&buffer_2[5], buffer_2[4]);
-                    port = std::to_string(ntohs(*((uint16_t*)&buffer_2[5+buffer_2[4]])));
+                    port = std::to_string(boost::endian::big_to_native(*((uint16_t*)&buffer_2[5+buffer_2[4]])));
                     break;
                 case 0x04://IPv6
                     //...
@@ -96,6 +105,7 @@ private:
     }
     void second_response(){
         auto self(shared_from_this());
+        std::cerr<<"second_response\n";
         resolver_.async_resolve(tcp::resolver::query({hostname, port}),
             [this, self](const boost::system::error_code& ec, boost::asio::ip::tcp::resolver::results_type result)
             {
@@ -107,8 +117,9 @@ private:
     }
     void first_connect(tcp::endpoint endpoint_){
         auto self(shared_from_this());
-        boost::asio::async_connect(socket_, endpoint_,
-                                   [this, self](const boost::system::error_code& ec, size_t)
+        std::cerr<<"first_connect\n";
+        socket_server.async_connect(endpoint_,
+                                   [this, self](const boost::system::error_code& ec)
         {
             if(!ec)
             {
@@ -119,6 +130,7 @@ private:
     void still_second_response(){
         auto self(shared_from_this());
         buffer_2[1] = 0x00;// maybe add some variants
+        std::cerr<<"still_second_response\n";
         boost::asio::async_write(socket_, boost::asio::buffer(buffer_2),
                                  [this,self](const boost::system::error_code& ec, size_t)
         {
@@ -131,14 +143,15 @@ private:
     }
 
     void do_something(){
-        //imagine its working
+        std::cerr<<"do_something\n";
     };
 };
 class server
 {
 public:
   server(boost::asio::io_context& io_context, short port)
-    : acceptor_(io_context, tcp::endpoint(tcp::v4(), port))
+    : acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
+      io_context(io_context)
   {
     do_accept();
   }
@@ -151,7 +164,7 @@ private:
         {
           if (!ec)
           {
-            std::make_shared<session>(std::move(socket))->start();
+            std::make_shared<session>(std::move(socket), io_context)->start();
           }
 
           do_accept();
@@ -159,4 +172,5 @@ private:
   }
 
   tcp::acceptor acceptor_;
+  boost::asio::io_context &io_context;
 };
