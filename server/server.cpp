@@ -97,40 +97,42 @@ private:
     void second_response(){
         auto self(shared_from_this());
         resolver_.async_resolve(tcp::resolver::query({hostname, port}),
-            [this, self](const boost::system::error_code& ec, tcp::resolver::iterator it)
+            [this, self](const boost::system::error_code& ec, boost::asio::ip::tcp::resolver::results_type result)
             {
                 if (!ec)
                 {
-                    still_second_response(it);
+                    first_connect(result->endpoint());
                 }
             });
     }
-
-    void still_second_response(tcp::resolver::iterator& it){
+    void first_connect(tcp::endpoint endpoint_){
+        auto self(shared_from_this());
+        boost::asio::async_connect(socket_, endpoint_,
+                                   [this, self](const boost::system::error_code& ec, size_t)
+        {
+            if(!ec)
+            {
+                still_second_response();
+            }
+        });
+    }
+    void still_second_response(){
         auto self(shared_from_this());
         buffer_2[1] = 0x00;// maybe add some variants
         boost::asio::async_write(socket_, boost::asio::buffer(buffer_2),
-                                 [this,self](const boost::system::error_code& ec, tcp::resolver::iterator it)
+                                 [this,self](const boost::system::error_code& ec, size_t)
         {
             if (!ec)
             {
-                first_connect(it);
+                do_something();
             }
         }
         );
     }
-    void first_connect(tcp::resolver::iterator& it){
-        auto self(shared_from_this());
-        boost::asio::async_connect(socket_, *it,
-                                   [this, self](const boost::system::error_code& ec)
-        {
-            if(!ec)
-            {
-                do_something();
-            }
-        });
-    }
-    void do_something();
+
+    void do_something(){
+        //imagine its working
+    };
 };
 class server
 {
