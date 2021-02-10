@@ -33,63 +33,99 @@ private:
     tcp::resolver resolver_;
 
     void first_greetings()
-    {
-        auto self(shared_from_this());
-        std::cerr<<"first_greetings ";
-        socket_.async_read_some(boost::asio::buffer(buffer_),
-                                [this, self](boost::system::error_code ec, std::size_t length)
-        {
+     {
+         auto self(shared_from_this());
+         std::cerr<<"first_greetings\n";
+         boost::asio::async_read(socket_, boost::asio::buffer(buffer_2, 2),
+                                 [this, self](boost::system::error_code ec, std::size_t length)
+         {
+             if(!ec)
+             {
+                 std::cerr<<length<<'\n';
+                 if (buffer_2[0] != 0x05)
+                 {
+                     return;
+                 }
+                 first_greetings_2();
+             }
+         });
+     }
+     void first_greetings_2(){
+         auto self(shared_from_this());
+         std::cerr<<"first_greetings_2\n";
+         boost::asio::async_read(socket_, boost::asio::buffer(buffer_, buffer_2[1]),
+                                 [this, self](boost::system::error_code ec, std::size_t)
+         {
             if(!ec)
             {
-                std::cerr<<"\n"<<length<<'\n';
-                if (length < 3 || buffer_[0] != 0x05)
-                {
-                    return;
-                }
-                int counter = buffer_[1];
+                buffer_[0] = 0x05;
                 buffer_[1] = 0xFF;
-                for(int i = 0; i < counter; ++i){
+                for(int i = 0; i < buffer_[1]; ++i){
                     if (buffer_[2+i]==0x00)
                         buffer_[1]=0x00;
                 }
-                first_answering();
             }
-        });
-    }
-    void first_answering(){
-        auto self(shared_from_this());
-        std::cerr<<"first_answering\n";
-        boost::asio::async_write(socket_, boost::asio::buffer(buffer_, 2),
-                                 [this, self](boost::system::error_code ec, std::size_t length)
-        {
-            if(buffer_[1] == 0xFF)
-                return;
-            if(!ec){
-                read_request();
-            }
-        });
-    }
+            first_answering();
+         });
+     }
+     void first_answering(){
+         auto self(shared_from_this());
+         std::cerr<<"first_answering\n";
+         boost::asio::async_write(socket_, boost::asio::buffer(buffer_, 2),
+                                  [this, self](boost::system::error_code ec, std::size_t)
+         {
+             if(buffer_[1] == 0xFF)
+                 return;
+             if(!ec){
+                 read_request();
+             }
+         });
+     }
+
     void read_request(){
         auto self(shared_from_this());
         std::cerr<<"read_request\n";
-        socket_.async_read_some(boost::asio::buffer(buffer_2),
-                                     [this, self](boost::system::error_code ec, std::size_t length)
+        boost::asio::async_read(socket_, boost::asio::buffer(buffer_2, 4),
+                                     [this, self](boost::system::error_code ec, std::size_t)
         {
             if(!ec)
             {
-                if(length < 6 || buffer_2[0] != 0x05 || buffer_2[1] != 0x01 || buffer_2[2] != 0x00 || buffer_2[3] == 0x04)
+                int counter = 0;
+                if(buffer_2[0] != 0x05 || buffer_2[1] != 0x01 || buffer_2[2] != 0x00 || buffer_2[3] == 0x04)
                 {
                     return;
                 }
+                if(buffer_2[3]==0x01){
+                    counter = 4;
+                }
+                else if(buffer_2[3]==0x03){
+                    boost::asio::async_read(socket_, boost::asio::buffer(&counter,1),
+                                            [self](boost::system::error_code, std::size_t){});
+                }
+                std::cerr<<counter<<'\n';
+                second_read_request(counter);
+            }
+    });
+    }
+    void second_read_request(int counter){
+        auto self(shared_from_this());
+        std::cerr<<"second_read_request\n";
+        boost::asio::async_read(socket_, boost::asio::buffer(buffer_, counter+2),
+                                     [this, self, counter](boost::system::error_code ec, std::size_t)
+        {
+            if(!ec)
+            {
                 switch(buffer_2[3])
                 {
                 case 0x01://IPv4
-                    hostname = boost::asio::ip::address_v4(boost::endian::big_to_native(*(uint32_t*)(&buffer_2[4]))).to_string();
-                    port = std::to_string(boost::endian::big_to_native(*((uint16_t*)&buffer_2[8])));
+                    hostname = boost::asio::ip::address_v4(boost::endian::endian_load<uint32_t,4,boost::endian::order::big>(&buffer_[0])).to_string();
+                    port = std::to_string(boost::endian::endian_load<uint16_t,2,boost::endian::order::big>(&buffer_[4]));
+                    std::cout<<"hostname - "<<hostname<<'\n'<<"port - "<<port<<'\n';
                     break;
                 case 0x03://domain name
-                    hostname = std::string(&buffer_2[5], buffer_2[4]);
-                    port = std::to_string(boost::endian::big_to_native(*((uint16_t*)&buffer_2[5+buffer_2[4]])));
+                    hostname = std::string(buffer_.begin(),buffer_.begin()+counter);
+                    port = std::to_string(boost::endian::endian_load<uint16_t,2,boost::endian::order::big>(&buffer_[counter]));
+                    std::cout<<"hostname - "<<hostname<<'\n'<<"port - "<<port<<'\n';
                     break;
                 case 0x04://IPv6
                     //...
@@ -98,14 +134,13 @@ private:
                     //error on addres
                     break;
                 }
-
-                second_response();
+                resolve();
             }
-    });
+        });
     }
-    void second_response(){
+    void resolve(){
         auto self(shared_from_this());
-        std::cerr<<"second_response\n";
+        std::cerr<<"resolve\n";
         resolver_.async_resolve(tcp::resolver::query({hostname, port}),
             [this, self](const boost::system::error_code& ec, boost::asio::ip::tcp::resolver::results_type result)
             {
@@ -121,22 +156,42 @@ private:
         socket_server.async_connect(endpoint_,
                                    [this, self](const boost::system::error_code& ec)
         {
-            if(!ec)
-            {
-                still_second_response();
+            switch (ec.value()) { // no 0x01: general failure, 0x02: connection not allowed by ruleset, 0x07: command not supported / protocol error
+                case boost::system::errc::success:
+                    buffer_2[1] = 0x00;
+                    break;
+                case boost::system::errc::network_down:
+                    buffer_2[1] = 0x03;
+                    break;
+                case boost::system::errc::host_unreachable:
+                    buffer_2[1] = 0x04;
+                    break;
+                case boost::system::errc::connection_aborted:
+                    buffer_2[1] = 0x05;
+                    break;
+                case boost::system::errc::timed_out:
+                    buffer_2[1] = 0x06;
+                    break;
+                case boost::system::errc::address_not_available:
+                    buffer_2[1] = 0x08;
+                    break;
             }
+            second_response();
+
         });
     }
-    void still_second_response(){
+    void second_response(){
         auto self(shared_from_this());
-        buffer_2[1] = 0x00;// maybe add some variants
-        std::cerr<<"still_second_response\n";
+        std::cerr<<"second_response\n";
         boost::asio::async_write(socket_, boost::asio::buffer(buffer_2),
                                  [this,self](const boost::system::error_code& ec, size_t)
         {
             if (!ec)
             {
-                do_something();
+                if (buffer_2[1] == 0x00)
+                {
+                    do_something();
+                }
             }
         }
         );
