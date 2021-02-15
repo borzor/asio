@@ -5,7 +5,7 @@
 #include <boost/asio.hpp>
 #include <string>
 #include <boost/endian/conversion.hpp>
-
+#include <thread>
 using boost::asio::ip::tcp;
 class session: public std::enable_shared_from_this<session>
 {
@@ -15,8 +15,8 @@ public:
         socket_server(io),
         resolver_(io)
     {
-        buffer_.resize(1024);
-        buffer_2.resize(1024);
+        buffer_.resize(2048);
+        buffer_2.resize(2048);
     }
       void start()
     {
@@ -27,11 +27,10 @@ private:
     tcp::socket socket_;
     tcp::socket socket_server;
     std::vector<unsigned char>buffer_;
-    std::vector<char>buffer_2;
+    std::vector<unsigned char>buffer_2;
     std::string hostname;
     std::string port;
     tcp::resolver resolver_;
-
     void first_greetings()
      {
          auto self(shared_from_this());
@@ -91,7 +90,7 @@ private:
             if(!ec)
             {
                 int counter = 0;
-                if(buffer_2[0] != 0x05 || buffer_2[1] != 0x01 || buffer_2[2] != 0x00 || buffer_2[3] == 0x04)
+                if(buffer_2[0] != 0x05 || buffer_2[1] != 0x01 || buffer_2[2] != 0x00 || buffer_2[3] == 0x04)// no IPv6 right now :<
                 {
                     return;
                 }
@@ -123,7 +122,7 @@ private:
                     std::cout<<"hostname - "<<hostname<<'\n'<<"port - "<<port<<'\n';
                     break;
                 case 0x03://domain name
-                    hostname = std::string(buffer_.begin(),buffer_.begin()+counter);
+                    hostname =  std::string(buffer_.begin(),buffer_.begin()+counter);
                     port = std::to_string(boost::endian::endian_load<uint16_t,2,boost::endian::order::big>(&buffer_[counter]));
                     std::cout<<"hostname - "<<hostname<<'\n'<<"port - "<<port<<'\n';
                     break;
@@ -158,22 +157,22 @@ private:
         {
             switch (ec.value()) { // no 0x01: general failure, 0x02: connection not allowed by ruleset, 0x07: command not supported / protocol error
                 case boost::system::errc::success:
-                    buffer_2[1] = 0x00;
+                    buffer_[1] = 0x00;
                     break;
                 case boost::system::errc::network_down:
-                    buffer_2[1] = 0x03;
+                    buffer_[1] = 0x03;
                     break;
                 case boost::system::errc::host_unreachable:
-                    buffer_2[1] = 0x04;
+                    buffer_[1] = 0x04;
                     break;
                 case boost::system::errc::connection_aborted:
-                    buffer_2[1] = 0x05;
+                    buffer_[1] = 0x05;
                     break;
                 case boost::system::errc::timed_out:
-                    buffer_2[1] = 0x06;
+                    buffer_[1] = 0x06;
                     break;
                 case boost::system::errc::address_not_available:
-                    buffer_2[1] = 0x08;
+                    buffer_[1] = 0x08;
                     break;
             }
             second_response();
@@ -183,24 +182,67 @@ private:
     void second_response(){
         auto self(shared_from_this());
         std::cerr<<"second_response\n";
-        boost::asio::async_write(socket_, boost::asio::buffer(buffer_2),
+        buffer_[0] = 0x05; buffer_[2] = 0x00; buffer_[3] = 0x01;
+        uint32_t net_host = boost::endian::endian_load<uint32_t, 4, boost::endian::order::little>(&buffer_[4]);
+        uint16_t net_port = boost::endian::endian_load<uint16_t, 2, boost::endian::order::little>(&buffer_[8]);
+        std::memcpy(&buffer_[4], &net_host, 4);
+        std::memcpy(&buffer_[8], &net_port, 2);
+        boost::asio::async_write(socket_, boost::asio::buffer(buffer_,10),
                                  [this,self](const boost::system::error_code& ec, size_t)
         {
             if (!ec)
             {
-                if (buffer_2[1] == 0x00)
+                if (buffer_[1] == 0x00)
                 {
-                    do_something();
+                    read_from_client();
+                    read_from_server();
                 }
             }
         }
         );
     }
+    void read_from_client(){
+        auto self(shared_from_this());
+        socket_.async_read_some(boost::asio::buffer(buffer_),[this,self](const boost::system::error_code& ec, size_t length){
+            if(!ec)
+            {
+                write_to_server(length);
+            }
+            read_from_client();
 
-    void do_something(){
-        std::cerr<<"do_something\n";
+            std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
+        });
     };
-};
+
+    void write_to_server(size_t len){
+        auto self(shared_from_this());
+        boost::asio::async_write(socket_server, boost::asio::buffer(buffer_, len),[this,self](const boost::system::error_code& ec, size_t)
+        {
+            if(!ec){
+                read_from_client();
+            }
+        });
+}
+
+    void read_from_server(){
+        auto self(shared_from_this());
+        socket_server.async_read_some(boost::asio::buffer(buffer_2),[this,self](const boost::system::error_code& ec, size_t length){
+            if(!ec)
+            {
+                write_to_client(length);
+            }
+        });
+    }
+    void write_to_client(size_t len){
+        auto self(shared_from_this());
+        boost::asio::async_write(socket_, boost::asio::buffer(buffer_2, len),[this,self](const boost::system::error_code& ec, size_t)
+        {
+            if(!ec){
+                read_from_server();
+            }
+        });
+    }
+    };
 class server
 {
 public:
