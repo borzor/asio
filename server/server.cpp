@@ -189,11 +189,10 @@ private:
         auto self(shared_from_this());
         std::cerr<<"second_response\n";
         buffer_[0] = 0x05; buffer_[2] = 0x00; buffer_[3] = 0x01;
-        uint32_t net_host = boost::endian::endian_load<uint32_t, 4, boost::endian::order::little>(&buffer_[4]);
-        uint16_t net_port = boost::endian::endian_load<uint16_t, 2, boost::endian::order::little>(&buffer_[8]);
-        std::memcpy(&buffer_[4], &net_host, 4);
-        std::memcpy(&buffer_[8], &net_port, 2);
-        boost::asio::async_write(socket_, boost::asio::buffer(buffer_,10),
+        u_char net_port = socket_server.remote_endpoint().port();
+        boost::endian::endian_store<uint32_t, 4, boost::endian::order::little>((u_char*)socket_server.remote_endpoint().address().to_v4().to_string().c_str(),buffer_[4]);
+        boost::endian::endian_store<uint16_t, 2, boost::endian::order::little>(&net_port, buffer_[8]);
+        boost::asio::async_write(socket_, boost::asio::buffer(buffer_, 10),
                                  [this,self](const boost::system::error_code& ec, size_t)
         {
             if (!ec)
@@ -206,20 +205,36 @@ private:
             }
         }
         );
-    }
+    };
     void read_from_client(){
         auto self(shared_from_this());
         socket_.async_read_some(boost::asio::buffer(buffer_),[this,self](const boost::system::error_code& ec, size_t length){
-            if(!ec)
+            if(!ec || length != 0)
             {
                 write_to_server(length);
             }
-            read_from_client();
+            else if (ec != boost::asio::error::eof)
+            {
+                socket_.close(); socket_server.close();
+            }
 
             std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
         });
-    };
+    }
+    void read_from_server(){
+        auto self(shared_from_this());
+        socket_server.async_read_some(boost::asio::buffer(buffer_2),[this,self](const boost::system::error_code& ec, size_t length){
+            if(!ec || length != 0)
+            {
+                write_to_client(length);
+            }
+            else if (ec != boost::asio::error::eof)
+            {
+                socket_.close(); socket_server.close();
+            }
 
+        });
+    }
     void write_to_server(size_t len){
         auto self(shared_from_this());
         boost::asio::async_write(socket_server, boost::asio::buffer(buffer_, len),[this,self](const boost::system::error_code& ec, size_t)
@@ -229,16 +244,6 @@ private:
             }
         });
 }
-
-    void read_from_server(){
-        auto self(shared_from_this());
-        socket_server.async_read_some(boost::asio::buffer(buffer_2),[this,self](const boost::system::error_code& ec, size_t length){
-            if(!ec)
-            {
-                write_to_client(length);
-            }
-        });
-    }
     void write_to_client(size_t len){
         auto self(shared_from_this());
         boost::asio::async_write(socket_, boost::asio::buffer(buffer_2, len),[this,self](const boost::system::error_code& ec, size_t)
