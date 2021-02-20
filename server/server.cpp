@@ -217,6 +217,10 @@ private:
             {
                 socket_.close(); socket_server.close();
             }
+            else
+            {
+                socket_server.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+            }
 
             std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
         });
@@ -231,6 +235,10 @@ private:
             else if (ec != boost::asio::error::eof)
             {
                 socket_.close(); socket_server.close();
+            }
+            else
+            {
+                socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
             }
 
         });

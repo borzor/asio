@@ -1,20 +1,28 @@
 #include "server.cpp"
-
+#include <charconv>
+#include <span>
 int main(int argc, char* argv[])
 {
   try
   {
-    if (argc != 2)
+    if (argc != 3)
     {
-      std::cerr << "error\n";
-      //return 1;
+      throw std::runtime_error("Correct format: <listen-port> <number_of_threads>");
     }
-    argv[1]="1234";
-    std::size_t max_threads = 2;
+    uint16_t port;
+    uint number_of_treads;
+    std::from_chars<uint16_t>(argv[1],argv[2], port);
+    std::from_chars<uint>(argv[2],argv[3],number_of_treads);
+    if(!(port>1 && port<65535)){
+        throw std::runtime_error("Port should be more then 1 and less then 65535");}
+    if(!(number_of_treads>=1 && number_of_treads<=std::thread::hardware_concurrency())){
+        std::cerr<<"Setting amount of threads to recommended ";
+        number_of_treads = std::thread::hardware_concurrency();
+    }
     std::vector<std::thread>thread_pool;
-    boost::asio::io_context io_context(max_threads);
+    boost::asio::io_context io_context(number_of_treads);
     server server_(io_context, std::atoi(argv[1]));
-    for(size_t i = 0; i<max_threads;i++){thread_pool.emplace_back(std::thread([&](){io_context.run();}));};
+    for(size_t i = 0; i<number_of_treads;i++){thread_pool.emplace_back(std::thread([&](){io_context.run();}));};
     for(auto &thread:thread_pool){
         thread.join();
     }
