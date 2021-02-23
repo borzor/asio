@@ -16,12 +16,12 @@ int main(int argc, char* argv[])
     if(!(port>1 && port<65535)){
         throw std::runtime_error("Port should be more then 1 and less then 65535");}
     if(!(number_of_treads>=1 && number_of_treads<=std::thread::hardware_concurrency())){
-        std::cerr<<"Setting amount of threads to recommended ";
+        std::cerr<<"Setting amount of threads to recommended\n";
         number_of_treads = std::thread::hardware_concurrency();
     }
     std::vector<std::thread>thread_pool;
     boost::asio::io_context io_context(number_of_treads);
-    server server_(io_context, std::atoi(argv[1]));
+    server server_(io_context, port);
     for(size_t i = 0; i<number_of_treads;i++){thread_pool.emplace_back(std::thread([&](){io_context.run();}));};
     for(auto &thread:thread_pool){
         thread.join();
