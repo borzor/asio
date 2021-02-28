@@ -103,6 +103,9 @@ private:
                         }
                     });
                 }
+                else if(buffer_2[3]==0x04){
+                    second_read_request(16);
+                }
             }
     });
     }
@@ -118,23 +121,32 @@ private:
                 {
                 case 0x01://IPv4
                 {   hostname = boost::asio::ip::address_v4(boost::endian::endian_load<uint32_t,4,boost::endian::order::big>(&buffer_[0])).to_string();
-                    port = std::to_string(boost::endian::endian_load<uint16_t,2,boost::endian::order::big>(&buffer_[4]));
+                    port = std::to_string(boost::endian::endian_load<uint16_t,2,boost::endian::order::big>(&buffer_[counter]));
                     std::cout<<"hostname - "<<hostname<<'\n'<<"port - "<<port<<'\n';
                     boost::asio::ip::tcp::resolver::results_type results;
                     first_connect(results.create(boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address(hostname),std::stoul(port, nullptr, 0)),hostname,port));
-                }
-                    break;
+                    break;}
                 case 0x03://domain name
-                    hostname =  std::string(buffer_.begin(),buffer_.begin()+counter);
+                {   hostname =  std::string(buffer_.begin(),buffer_.begin()+counter);
                     port = std::to_string(boost::endian::endian_load<uint16_t,2,boost::endian::order::big>(&buffer_[counter]));
                     std::cout<<"hostname - "<<hostname<<'\n'<<"port - "<<port<<'\n';
                     resolve();
-                    break;
+                    break;}
                 case 0x04://IPv6
-                    //...
-                    break;
-                default:
-                    //error on addres
+                {   std::uint64_t num1;std::uint64_t num2;
+                    std::array<unsigned char, 16> bytes;
+                    boost::asio::ip::tcp::resolver::results_type results;
+                    std::copy(std::begin(buffer_), std::begin(buffer_) + (std::size(buffer_)-2) / 2, (unsigned char*)&num1);
+                    std::copy(std::begin(buffer_) + (std::size(buffer_)-2) / 2, std::end(buffer_)-2, (unsigned char*)&num2);
+                    boost::endian::big_to_native(num1);
+                    boost::endian::big_to_native(num2);
+                    std::copy((unsigned char*)&num1, ((unsigned char*)&num1) + 8, bytes.data());
+                    std::copy((unsigned char*)&num2, ((unsigned char*)&num2) + 8, bytes.data() + 8);
+                    hostname = boost::asio::ip::address_v6(bytes).to_string();
+                    port = std::to_string(boost::endian::endian_load<uint16_t,2,boost::endian::order::big>(&buffer_[counter]));
+                    first_connect(results.create(boost::asio::ip::tcp::endpoint(boost::asio::ip::make_address(hostname),std::stoul(port,nullptr,0)),hostname,port));
+                    break;}
+                default://error on addres
                     break;
                 }
             }
@@ -219,7 +231,7 @@ private:
             }
             else
             {
-                socket_server.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+                socket_server.shutdown(boost::asio::ip::tcp::socket::shutdown_send);
             }
 
             std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
@@ -238,7 +250,7 @@ private:
             }
             else
             {
-                socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+                socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_send);
             }
 
         });
