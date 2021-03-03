@@ -30,6 +30,7 @@ private:
     std::string hostname;
     std::string port;
     tcp::resolver resolver_;
+    std::map<std::string,std::string>logpas{{"admin","password"}};
     void first_greetings()
      {
          auto self(shared_from_this());
@@ -43,23 +44,33 @@ private:
                  {
                      return;
                  }
-                 first_greetings_2();
+                 uint amount_of_number_auth = buffer_2[1];
+                 first_greetings_2(amount_of_number_auth);
+
              }
          });
      }
-     void first_greetings_2(){
+     void first_greetings_2(uint numb){
          auto self(shared_from_this());
          std::cerr<<"first_greetings_2\n";
-         boost::asio::async_read(socket_, boost::asio::buffer(buffer_, buffer_2[1]),
-                                 [this, self](boost::system::error_code ec, std::size_t)
+         boost::asio::async_read(socket_, boost::asio::buffer(buffer_2, numb),
+                                 [this, self, numb](boost::system::error_code ec, std::size_t)
          {
             if(!ec)
             {
                 buffer_[0] = 0x05;
                 buffer_[1] = 0xFF;
-                for(int i = 0; i < buffer_[1]; ++i){
-                    if (buffer_[2+i]==0x00)
-                        buffer_[1]=0x00;
+                for(uint i = 0; i < numb; ++i){
+                    if (buffer_2[i] == 0x00)
+                    {
+                        buffer_[1] = 0x00;
+                        break;
+                    }
+                    else if(buffer_2[i] == 0x02)
+                    {
+                        buffer_[1] = 0x02;
+                        break;
+                    }
                 }
             }
             first_answering();
@@ -74,11 +85,57 @@ private:
              if(buffer_[1] == 0xFF)
                  return;
              if(!ec){
-                 read_request();
+                 if(buffer_[1] == 0x00)
+                     read_request();
+                 else if(buffer_[1] ==0x02){
+                     log_pas();
+                 }
+
              }
          });
      }
+     void log_pas(){
+         auto self = shared_from_this();
+         std::cerr<<"log_pas\n";
+         boost::asio::async_read(socket_, boost::asio::buffer(buffer_, 2),
+                 [this,self](boost::system::error_code ec, std::size_t)
+         {//std::wcerr<<buffer_[1]<<'\n';
+             uint amount_in_log = buffer_[1];
+             if(!ec)
+                 boost::asio::async_read(socket_,boost::asio::buffer(buffer_,amount_in_log+1),
+                        [this,self,amount_in_log](boost::system::error_code ec, std::size_t)
+                {
+                     if(!ec){
+                         std::string UNAME(&buffer_[0], &buffer_[amount_in_log]);
+                         uint amount_in_pas = buffer_[amount_in_log];
+                         boost::asio::async_read(socket_,boost::asio::buffer(buffer_2,amount_in_pas),
+                                 [this,self,UNAME,amount_in_pas](boost::system::error_code ec, std::size_t)
+                         {
+                            if(!ec)
+                            {
+                                std::string PASSWD(&buffer_2[0], &buffer_2[amount_in_pas]);
+                                std::cerr<<(UNAME=="admin")<<' '<<UNAME<<'\n';
+                                std::cerr<<(PASSWD=="password")<<' '<<PASSWD<<'\n';
+                                std::map<std::string,std::string>::iterator check = logpas.find(UNAME);
 
+                                if((check != logpas.end())&&(check->second==PASSWD))//if he exist in map and his second element==PASSDW
+                                {
+                                    std::cerr<<"ura\n";
+                                    buffer_2[0]=0x01;buffer_2[1]=0x00;
+                                    boost::asio::async_write(socket_, boost::asio::buffer(buffer_2, 2),
+                                                             [this, self](boost::system::error_code ec, std::size_t len)
+                                    {
+                                        std::cerr<<len<<'\n';
+                                        if(!ec)
+                                            read_request();
+                                    });
+                                }
+                            }
+                         });
+                     }
+                });
+         });
+     }
     void read_request(){
         auto self(shared_from_this());
         std::cerr<<"read_request\n";
@@ -87,25 +144,32 @@ private:
         {
             if(!ec)
             {
-                if(buffer_2[0] != 0x05 || buffer_2[1] != 0x01 || buffer_2[2] != 0x00 || buffer_2[3] == 0x04)// no IPv6 right now :<
+                if(buffer_2[0] != 0x05 || buffer_2[2] != 0x00 || buffer_2[3] == 0x04)//
                 {
                     return;
                 }
-                if(buffer_2[3]==0x01){
-                    second_read_request(4);
-                }
-                else if(buffer_2[3]==0x03){
-                    boost::asio::async_read(socket_, boost::asio::buffer(buffer_, 1),
-                                            [this,self](boost::system::error_code ec, std::size_t)
-                    {
-                        if(!ec){
-                        second_read_request(buffer_[0]);
-                        }
-                    });
-                }
-                else if(buffer_2[3]==0x04){
-                    second_read_request(16);
-                }
+                switch (buffer_2[1]) {
+                case 0x01://TCP conection
+                    if(buffer_2[3]==0x01){
+                        second_read_request(4);
+                    }
+                    else if(buffer_2[3]==0x04){
+                        second_read_request(16);
+                    }
+                    else if(buffer_2[3]==0x03){
+                        boost::asio::async_read(socket_, boost::asio::buffer(buffer_, 1),
+                                                [this,self](boost::system::error_code ec, std::size_t)
+                        {
+                            if(!ec){
+                            second_read_request(buffer_[0]);}
+                        });
+                    }
+                    break;
+                case 0x02://binding
+                    break;
+                case 0x03://udp conection
+                    break;
+            }
             }
     });
     }
@@ -231,7 +295,7 @@ private:
             }
             else
             {
-                socket_server.shutdown(boost::asio::ip::tcp::socket::shutdown_send);
+                socket_server.shutdown(boost::asio::ip::tcp::socket::shutdown_receive);
             }
 
             std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
@@ -250,7 +314,7 @@ private:
             }
             else
             {
-                socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_send);
+                socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_receive);
             }
 
         });
@@ -274,6 +338,7 @@ private:
         });
     }
     };
+
 class server
 {
 public:
