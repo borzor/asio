@@ -8,5 +8,6 @@ Socks5[(RFC)](https://tools.ietf.org/html/rfc1928) multithread asynchronous prox
 
 #### Supported authentication methods 
 * `NO AUTHENTICATION REQUIRED` 
+* `Username/Password Authentication for SOCKS V5`[(RFC)](https://tools.ietf.org/html/rfc1929)
 
 
