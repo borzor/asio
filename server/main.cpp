@@ -13,9 +13,9 @@ int main(int argc, char* argv[])
     uint number_of_treads;
     std::from_chars<uint16_t>(argv[1],argv[2], port);
     std::from_chars<uint>(argv[2],argv[3],number_of_treads);
-    if(!(port>1 && port<65535)){
+    if(port <= 0 || port > 65535){
         throw std::runtime_error("Port should be more then 1 and less then 65535");}
-    if(!(number_of_treads>=1 && number_of_treads<=std::thread::hardware_concurrency())){
+    if(number_of_treads<1 || number_of_treads>std::thread::hardware_concurrency()){
         std::cerr<<"Setting amount of threads to recommended\n";
         number_of_treads = std::thread::hardware_concurrency();
     }
