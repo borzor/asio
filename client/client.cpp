@@ -32,6 +32,23 @@ void client::socket_create(){
     }
     std::cerr<<"socket "<<socket_id<<" created\n";
 }
+void client::async_connect(reactor &reactor){
+    connect(socket_id, (struct sockaddr *)&addr, sizeof (addr));
+    std::span<char>buffer;
+    size_t size = 0;
+    write(reactor, buffer, size, [&](size_t){getsockopt_(reactor);});
+}
+void client::getsockopt_(reactor &reactor){
+    std::span<char>buf;
+    if((error = getsockopt(socket_id, SOL_SOCKET, SO_ERROR, &buf, (uint*)buf.size())) < 0){// ??????????????????????????????????????
+        return;}// error on getsockopt?)))))))))))))
+    else if(memcmp(&buf, &error, 1)){//??????????
+            //async_connect();// if error try to poity nahyu
+        }
+    //write(reactor, )
+    //write_queue.push_back([&](size_t){socks5::socks5_handshake_write(*this);});
+    return;
+}
 uint client::get_socket_id() const{
     return socket_id;
 }
@@ -70,7 +87,7 @@ void client::socks5_handshake_read(reactor &reactor){
 void client::socks5_request(reactor &reactor){
     uint16_t second_port = htons(port_2_connect);
     std::vector<char> buffer = { 0x05, 0x01, 0x00, 0x01 };
-    memcpy(&buffer[4], &reactor.addr.sin_addr.s_addr, 4);
+    memcpy(&buffer[4], &addr.sin_addr.s_addr, 4);
     memcpy(&buffer[8], &second_port, 2);
     write(reactor, buffer, 10, [&](size_t){
 

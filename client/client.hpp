@@ -11,11 +11,14 @@ private:
     uint method;
     std::string IP;
     uint message_size;
+    struct sockaddr_in addr;//local host
 public:
     client(ushort port_, ushort port_2, uint method, std::string IP, std::size_t message_size);
     client(client&& mv);
     ~client();
     void socket_create();
+    void async_connect(reactor &reactor);
+    void getsockopt_(reactor &reactor);
     uint get_socket_id() const;
     size_t dissconect();
     void read(reactor &reactor, std::span<char> buffer, size_t size, std::function<void (size_t)> handler);
@@ -26,5 +29,4 @@ public:
     void socks5_request_read(reactor &reactor);
     void do_write(reactor &reactor);
     void do_read(reactor &reactor);
-    friend class reactor;
 };

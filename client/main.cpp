@@ -1,4 +1,4 @@
-#include "master.cpp"
+#include "master.hpp"
 
 int main(int argc, char* argv[])
 {

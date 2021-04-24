@@ -22,11 +22,8 @@ private:
     std::queue<std::pair<std::function<void(size_t)>, buf>>read_queue;
     std::queue<std::pair<std::function<void(size_t)>, buf>>write_queue;
     std::vector<pollfd> fds;
-    struct sockaddr_in addr;//local host
 public:
     reactor(std::vector<pollfd> fds);
-    void async_connect(uint socket_id);
-    size_t getsockopt_(uint socket_id, std::span<char> buf, size_t size);
     size_t async_write_some(uint socket_id, std::span<char> buf, size_t size);
     size_t async_read_some(uint socket_id, std::span<char> buf, size_t size);
     size_t async_write(uint socket_id, std::span<char> buf, size_t size);

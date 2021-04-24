@@ -5,9 +5,6 @@ reactor::reactor(std::vector<pollfd> fds)
 {}
 
 void reactor::run(){
-    for(auto &i: fds){
-        async_connect(i.fd);
-    }
     for(;;){
         if(poll(&fds[0], fds.size(), 0)>0){
             for(auto &i: fds){
@@ -25,22 +22,7 @@ void reactor::run(){
     }
 }
 }
-void reactor::async_connect(uint socket_id){
-    connect(socket_id, (struct sockaddr *)&addr, sizeof (addr));
-    std::span<char>buffer;
-    size_t size = 0;
-    buf buf{buffer, size};
-    write_queue.push(std::pair([&](size_t){getsockopt_(socket_id, buffer, size);}, buf));
-}
-size_t reactor::getsockopt_(uint socket_id, std::span<char> buf, size_t size){
-    if((error = getsockopt(socket_id, SOL_SOCKET, SO_ERROR, &buf, (uint*)buf.size())) < 0){// ??????????????????????????????????????
-        return 0;}// error on getsockopt?)))))))))))))
-    else if(memcmp(&buf, &error, 1)){//??????????
-            async_connect();// if error try to connect
-        }
-    write_queue.push_back([&](size_t){socks5::socks5_handshake_write(*this);});
-    return 0;
-}
+
 
 
 
