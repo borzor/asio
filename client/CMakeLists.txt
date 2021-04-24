@@ -6,5 +6,5 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Threads REQUIRED)
 
-add_executable(client main.cpp client.cpp client.hpp master.hpp)
+add_executable(client main.cpp client.cpp client.hpp master.cpp socks5.cpp socks5.hpp)
 target_link_libraries(client PRIVATE Threads::Threads )

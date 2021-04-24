@@ -1,4 +1,4 @@
-#include "master.hpp"
+#include "master.cpp"
 
 int main(int argc, char* argv[])
 {
@@ -19,7 +19,6 @@ int main(int argc, char* argv[])
         double counter=number_of_clients/number_of_threads;
         uint number_of_connections = 0;
         std::vector<std::vector<client>> client_(static_cast<std::size_t>(number_of_threads));
-
         if(listen_port <= 0 || listen_port > 65535){
             throw std::runtime_error("Listen port should be more then 1 and less then 65535");}
         if(target_port <= 0 || target_port > 65535){
@@ -50,5 +49,6 @@ int main(int argc, char* argv[])
     {
       std::cerr << "Exception: " << e.what() << "\n";
     }
+
     return 0;
 }

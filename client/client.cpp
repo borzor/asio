@@ -1,34 +1,91 @@
-#include "client.hpp"
+#include "socks5.hpp"
 
 client::client(ushort port_, ushort port_2, uint method, std::string IP, std::size_t message_size)
-    :proxy_port(port_),port_2_connect(port_2), method(method), IP(IP), buffer_(2048), buffer_2(message_size)
+    :proxy_port(port_),port_2_connect(port_2), method(method), IP(IP), message_size(message_size)
     {}
 client::client(client&& mv)
-    :proxy_port(mv.proxy_port),port_2_connect(mv.port_2_connect),method(mv.method),IP(mv.IP), buffer_(mv.buffer_), buffer_2(mv.buffer_2)
-    {}
+    :socket_id(mv.socket_id){
+    mv.socket_id = -1;
+    }
 client::~client()
 {
-    close(socket_id);
-    curret_phase = 0;
-}
-void client::write_(uint socket_, const void * message,uint size){
-    if((error = write(socket_, message, size))<0){
-        std::cerr<<"error on write: "<<error;
-        return;
+    if(socket_id != -1){
+        close(socket_id);
     }
 }
-void client::read_(uint socket_, void * message, uint size){
-    if((error = read(socket_, message, size))<0){
-        std::cerr<<"error on read: "<<error;
-        return;
+
+size_t client::async_write_some(std::span<char> buf, size_t size){// size parametr only for poll
+    size_t writen_bytes = 0;
+    if((writen_bytes = write(socket_id, &buf, size))<0){//can be infinite cycle?
+        std::cerr<<"error on write: "<<writen_bytes;
+        add_to_queue()
+        size_t (client::*callback)(std::span<char>, size_t);
+        callback = &client::async_write_some;
+        poll_wrapper(POLLOUT, callback, buf, size);
+    }
+    else
+        return writen_bytes;
+}
+size_t client::async_read_some(std::span<char> buf, size_t size){
+    size_t bytes_read = 0;
+    if((bytes_read = read(socket_id, &buf, size))<0){
+        std::cerr<<"error on async_read_some: "<<bytes_read;
+        size_t (client::*callback)(std::span<char>, size_t);
+        callback = &client::async_read_some;
+        poll_wrapper(POLLIN, callback, buf, size);
+    }
+    else
+        return bytes_read;
+}
+
+size_t client::async_write(std::span<char> buf, size_t size){// errors to break cycle?
+    size_t writen_bytes = 0;
+    for(;;){
+        if(((writen_bytes += async_write_some(buf.subspan(writen_bytes), size-writen_bytes)) = size)){
+            return writen_bytes;
+        }
+        else{
+            size_t (client::*callback)(std::span<char>, size_t);
+            callback = &client::async_write;
+            poll_wrapper(POLLIN, callback, buf.subspan(writen_bytes), size-writen_bytes);
+        }
     }
 }
-int client::get_socket_id(){
-    return socket_id;
+
+size_t client::async_read(std::span<char> buf, size_t size){
+    size_t bytes_read = 0;
+    for(;;){
+        if(((bytes_read += async_read_some(buf.subspan(bytes_read), size-bytes_read)) = size)){
+            return bytes_read;
+        }
+        else{
+            size_t (client::*callback)(std::span<char>, size_t);
+            callback = &client::async_read;
+            poll_wrapper(POLLIN, callback, buf.subspan(bytes_read), size-bytes_read);
+        }
+    }
 }
-int client::get_current_phase(){
-    return curret_phase;
+
+size_t client::getsockopt_(std::span<char> buf, size_t size){
+    size_t error = 0;
+    if((error = getsockopt(socket_id, SOL_SOCKET, SO_ERROR, &buf, (uint*)size)) < 0){// ??????????????????????????????????????
+        return 0;}// error on getsockopt?)))))))))))))
+    else if(memcmp(&buf, &error, 1)){//??????????
+            async_connect();// if error try to connect
+        }
+    add_to_queue(hw);
+    return 0;
 }
+
+void client::async_connect(){
+    std::span<char> buf;
+    uint size = sizeof(buf);
+    connect(socket_id, (struct sockaddr *)&addr, sizeof (addr));
+    size_t (client::*callback)(std::span<char>, size_t);
+    callback = &client::getsockopt_;
+    poll_wrapper(POLLOUT, callback, buf, size);
+}
+
 void client::socket_create(){
     int on = 1;
     if((socket_id = socket(PF_INET, SOCK_STREAM, 0))<0){
@@ -37,70 +94,132 @@ void client::socket_create(){
     }
     if((error = (setsockopt(socket_id, SOL_SOCKET,  SO_REUSEADDR,(char *)&on, sizeof(on))))<0){
         std::cerr<<"setsockport with error;\n";
-        shutdown(socket_id,2);
+        close(socket_id);
         return;
     }
     if((error =(ioctl(socket_id, FIONBIO, (char *)&on)))<0){
         std::cerr<<"ioctl with error;\n";
-        shutdown(socket_id,2);
-        return;
-    }
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = PF_INET;
-    addr.sin_addr.s_addr = inet_addr(IP.c_str());
-    addr.sin_port = htons(proxy_port);
-    if((error = bind(socket_id,(struct sockaddr *)&addr, sizeof(addr)))<0){
-        std::cerr<<"error in bind  witd socket_id"<<socket_id<<"\nand error:"<<error;
-        return;
-    }
-    if((error = connect(socket_id, (struct sockaddr *)&addr, sizeof (addr)))<0){
-        std::cerr<<"error on connect: "<<error;
+        close(socket_id);
         return;
     }
     std::cerr<<"socket "<<socket_id<<" created\n";
 }
-void client::socks5_handshake_write(){
-    buffer_[0] = 0x05;
-    buffer_[1] = 0x01;
-    buffer_[2] = method;
-    write_(socket_id, &buffer_[0], 3);
+uint client::get_socket_id() const{
+    return socket_id;
 }
-void client::socks5_handshake_read(){
-    read_(socket_id, &buffer_[0], 2);
-    if(buffer_[0]!=0x05 || buffer_[1]!=method){
-        std::cerr<<"error on first answer from server\n";
-        return;
+uint client::get_method() const{
+    return method;
+}
+ushort client::get_connect_port() const{
+    return port_2_connect;
+}
+const sockaddr_in *client::get_addr() const{
+    return &addr;
+}
+uint client::get_msize() const{
+    return message_size;
+}
+void client::add_to_queue(type type){
+    switch(type)
+    {
+    case connect:
+        write_queue.push([&](size_t){async_connect();});
+    case awrites:
+        write_queue.push([&]())
+    case hw:
+        write_queue.push([&](size_t){socks5::socks5_handshake_write(*this);});
+    case hr:
+        read_queue.push([&](size_t){socks5::socks5_handshake_read(*this);});
+    case reqw:
+        write_queue.push([&](size_t){socks5::socks5_request(*this);});
+    case reqr:
+        read_queue.push([&](size_t){socks5::socks5_request_read(*this);});
+    case dwrite:
+        write_queue.push([&](size_t){socks5::do_write(*this);});
+    case dread:
+        read_queue.push([&](size_t){socks5::do_read(*this);});
+    case disc:
+        dissconect();
     }
-    curret_phase = 1;
 }
-void client::socks5_request(){
-    buffer_[0]=0x05; buffer_[1]=0x01; buffer_[2]=0x00; buffer_[3]=0x01;
-    uint16_t second_port = htons(port_2_connect);
-    memcpy(&buffer_[4], &addr.sin_addr.s_addr, 4);
-    memcpy(&buffer_[8],&second_port, 2);
-    write_(socket_id, &buffer_[0], 10);
+size_t client::dissconect(){
+    return shutdown(socket_id, 2);
 }
-void client::socks5_request_read(){
-    read_(socket_id, &buffer_[0], 10);
-    if(buffer_[1]!=0x00){
-        std::cerr<<"error on first answer from server\n";
-        return;
-    }
-    curret_phase = 2;
-}
-void client::do_write(){
-    memset(&buffer_2[0], 1, buffer_2.size());
-    write_(socket_id, &buffer_2[0], buffer_2.size());
-}
-void client::do_read(){
-    read_(socket_id, &buffer_2[0], buffer_2.size());
-}
-std::tuple<int,int> poll_wrapper::wait_for_event(std::vector<pollfd>&fds, nfds_t nfds){
-    std::cerr<<nfds<<'\n'<<fds[0].fd<<'\n'<<fds[0].events<<'\n';
-    int i = poll(&fds[0], nfds, -1);
-    std::cerr<<"after poll\n";
-    return std::make_tuple(fds[i].revents, i);
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
