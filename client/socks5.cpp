@@ -3,7 +3,7 @@
 void socks5::socks5_handshake_write(client &client){
     char a[] = { 0x05, 0x01, static_cast<char>(0x00) };//last method
     client.async_write(a, 3);
-    client.add_to_queue(client::type::hr);
+    client.read_queue.push_back([&](size_t){async_write(a,3);});
 }
 
 void socks5::socks5_handshake_read(client &client){
@@ -13,7 +13,7 @@ void socks5::socks5_handshake_read(client &client){
         std::cerr<<"error on first answer from server\n";
         return;
     }
-    client.add_to_queue(client::type::reqw);
+    client.write_queue.push_back([&](size_t){socks5_request(client);});
 }
 void socks5::socks5_request(client &client){
     uint16_t second_port = htons(client.get_connect_port());
@@ -21,7 +21,7 @@ void socks5::socks5_request(client &client){
     memcpy(&buffer[4], &client.get_addr()->sin_addr.s_addr, 4);
     memcpy(&buffer[8],&second_port, 2);
     client.async_write(buffer, 10);
-    client.add_to_queue(client::type::reqr);
+    client.read_queue.push_back([&](size_t){socks5_request_read(client);});
 }
 
 void socks5::socks5_request_read(client &client){
@@ -31,13 +31,12 @@ void socks5::socks5_request_read(client &client){
         std::cerr<<"error on first answer from server\n";
         return;
     }
-    client.
-    client.add_to_queue(client::type::dwrite);
+    client.write_queue.push_back([&](size_t){do_write(client);});
 }
 void socks5::do_write(client &client){
     std::vector<char>buf(client.get_msize(), 0);
     client.async_write(buf, client.get_msize());
-    client.add_to_queue(client::type::dread);
+    //client.add_to_queue(client::type::dread);
 }
 void socks5::do_read(client &client){
     std::span<char>buf;

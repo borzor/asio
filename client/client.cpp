@@ -1,4 +1,4 @@
-#include "socks5.hpp"
+#include "client.hpp"
 
 client::client(ushort port_, ushort port_2, uint method, std::string IP, std::size_t message_size)
     :proxy_port(port_),port_2_connect(port_2), method(method), IP(IP), message_size(message_size)
@@ -12,78 +12,6 @@ client::~client()
     if(socket_id != -1){
         close(socket_id);
     }
-}
-
-size_t client::async_write_some(std::span<char> buf, size_t size){// size parametr only for poll
-    size_t writen_bytes = 0;
-    if((writen_bytes = write(socket_id, &buf, size))<0){//can be infinite cycle?
-        std::cerr<<"error on write: "<<writen_bytes;
-        add_to_queue()
-        size_t (client::*callback)(std::span<char>, size_t);
-        callback = &client::async_write_some;
-        poll_wrapper(POLLOUT, callback, buf, size);
-    }
-    else
-        return writen_bytes;
-}
-size_t client::async_read_some(std::span<char> buf, size_t size){
-    size_t bytes_read = 0;
-    if((bytes_read = read(socket_id, &buf, size))<0){
-        std::cerr<<"error on async_read_some: "<<bytes_read;
-        size_t (client::*callback)(std::span<char>, size_t);
-        callback = &client::async_read_some;
-        poll_wrapper(POLLIN, callback, buf, size);
-    }
-    else
-        return bytes_read;
-}
-
-size_t client::async_write(std::span<char> buf, size_t size){// errors to break cycle?
-    size_t writen_bytes = 0;
-    for(;;){
-        if(((writen_bytes += async_write_some(buf.subspan(writen_bytes), size-writen_bytes)) = size)){
-            return writen_bytes;
-        }
-        else{
-            size_t (client::*callback)(std::span<char>, size_t);
-            callback = &client::async_write;
-            poll_wrapper(POLLIN, callback, buf.subspan(writen_bytes), size-writen_bytes);
-        }
-    }
-}
-
-size_t client::async_read(std::span<char> buf, size_t size){
-    size_t bytes_read = 0;
-    for(;;){
-        if(((bytes_read += async_read_some(buf.subspan(bytes_read), size-bytes_read)) = size)){
-            return bytes_read;
-        }
-        else{
-            size_t (client::*callback)(std::span<char>, size_t);
-            callback = &client::async_read;
-            poll_wrapper(POLLIN, callback, buf.subspan(bytes_read), size-bytes_read);
-        }
-    }
-}
-
-size_t client::getsockopt_(std::span<char> buf, size_t size){
-    size_t error = 0;
-    if((error = getsockopt(socket_id, SOL_SOCKET, SO_ERROR, &buf, (uint*)size)) < 0){// ??????????????????????????????????????
-        return 0;}// error on getsockopt?)))))))))))))
-    else if(memcmp(&buf, &error, 1)){//??????????
-            async_connect();// if error try to connect
-        }
-    add_to_queue(hw);
-    return 0;
-}
-
-void client::async_connect(){
-    std::span<char> buf;
-    uint size = sizeof(buf);
-    connect(socket_id, (struct sockaddr *)&addr, sizeof (addr));
-    size_t (client::*callback)(std::span<char>, size_t);
-    callback = &client::getsockopt_;
-    poll_wrapper(POLLOUT, callback, buf, size);
 }
 
 void client::socket_create(){
@@ -107,45 +35,69 @@ void client::socket_create(){
 uint client::get_socket_id() const{
     return socket_id;
 }
-uint client::get_method() const{
-    return method;
-}
-ushort client::get_connect_port() const{
-    return port_2_connect;
-}
-const sockaddr_in *client::get_addr() const{
-    return &addr;
-}
-uint client::get_msize() const{
-    return message_size;
-}
-void client::add_to_queue(type type){
-    switch(type)
-    {
-    case connect:
-        write_queue.push([&](size_t){async_connect();});
-    case awrites:
-        write_queue.push([&]())
-    case hw:
-        write_queue.push([&](size_t){socks5::socks5_handshake_write(*this);});
-    case hr:
-        read_queue.push([&](size_t){socks5::socks5_handshake_read(*this);});
-    case reqw:
-        write_queue.push([&](size_t){socks5::socks5_request(*this);});
-    case reqr:
-        read_queue.push([&](size_t){socks5::socks5_request_read(*this);});
-    case dwrite:
-        write_queue.push([&](size_t){socks5::do_write(*this);});
-    case dread:
-        read_queue.push([&](size_t){socks5::do_read(*this);});
-    case disc:
-        dissconect();
-    }
-}
+
 size_t client::dissconect(){
     return shutdown(socket_id, 2);
 }
 
+void client::read(reactor &reactor, std::span<char> buffer, size_t size, std::function<void(size_t)> handler){
+    reactor.fds[socket_id].events = POLLIN;
+    reactor::buf buf{buffer, size};
+    reactor.read_queue.push(std::pair(handler, buf));
+}
+void client::write(reactor &reactor, std::span<char> buffer, size_t size, std::function<void(size_t)> handler){
+    reactor.fds[socket_id].events = POLLOUT;
+    reactor::buf buf{buffer, size};
+    reactor.write_queue.push(std::pair(handler, buf));
+}
+void client::socks5_handshake_write(reactor &reactor){
+    std::vector<char> a = { 0x05, 0x01, static_cast<char>(method) };
+    write(reactor, a, 3, [&](size_t a){
+
+        socks5_handshake_read(reactor);});
+}
+
+void client::socks5_handshake_read(reactor &reactor){
+    std::vector<char>buffer(2);
+    read(reactor, buffer, 2, [&](size_t){
+
+        if(buffer[0]!=0x05 || buffer[1]!=method){
+            std::cerr<<"error on first answer from server\n";
+            return;
+        }
+        socks5_request(reactor);});//maybe callback for cheching correct
+}
+void client::socks5_request(reactor &reactor){
+    uint16_t second_port = htons(port_2_connect);
+    std::vector<char> buffer = { 0x05, 0x01, 0x00, 0x01 };
+    memcpy(&buffer[4], &reactor.addr.sin_addr.s_addr, 4);
+    memcpy(&buffer[8], &second_port, 2);
+    write(reactor, buffer, 10, [&](size_t){
+
+        socks5_request_read(reactor);});
+}
+
+void client::socks5_request_read(reactor &reactor){
+    std::vector<char>buffer(10);
+    read(reactor, buffer, 10, [&](size_t){
+
+        if(buffer[1]!=0x00){
+            std::cerr<<"error on first answer from server\n";
+            return;
+        }
+        do_write(reactor);});//maybe callback for cheching correct
+
+}
+void client::do_write(reactor &reactor){
+    std::vector<char>buffer(message_size, 0);
+    write(reactor, buffer, message_size, [&](size_t){
+
+        do_read(reactor);});
+}
+void client::do_read(reactor &reactor){
+    std::span<char>buf;
+    //client.sdohni_nahyu();
+}
 
 
 
