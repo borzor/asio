@@ -8,23 +8,35 @@ void reactor::run(){
     for(;;){
         if(poll(&fds[0], fds.size(), 0)>0){
             for(auto &i: fds){
-                if(i.revents & POLLIN){//read
-                    int a = write(i.fd, &write_queue.front().second.buffer, write_queue.front().second.size);
-                    write_queue.front().first(a);
-                    write_queue.pop();
+                if((i.revents & POLLOUT) &&(!getsockopt(i.fd, SOL_SOCKET, SO_ERROR, &buff, (uint*)buff.size()))){//WRITE
+                    int a = write(i.fd, &queues[i.fd].write_queue.front().second.buffer, queues[i.fd].write_queue.front().second.size);
+                    queues[i.fd].write_queue.front().first(a);
+                    queues[i.fd].write_queue.pop();
                 }
-                if(i.revents & POLLOUT){//write
-                    int a = read(i.fd, &read_queue.front().second.buffer, read_queue.front().second.size);
-                    read_queue.front().first(a);
-                    read_queue.pop();
+                if(i.revents & POLLIN){//read
+                    int a = read(i.fd, &queues[i.fd].read_queue.front().second.buffer, queues[i.fd].read_queue.front().second.size);
+                    queues[i.fd].read_queue.front().first(a);
+                    queues[i.fd].read_queue.pop();
+                }
+                else{//ERROR CODES
+                    getsockopt(i.fd, SOL_SOCKET, SO_ERROR, &buff, (uint*)buff.size());
+                    //std::cout<<errno<<' ';
                 }
         }
     }
 }
 }
-
-
-
+void reactor::async_read(reactor &reactor, uint socket_id, std::span<char> buffer, size_t size, std::function<void(size_t)> handler){
+    fds[socket_id].events = POLLIN;
+    reactor::buf buf{buffer, size};
+    reactor.queues[socket_id].read_queue.push(std::pair(handler, buf));
+}
+void reactor::async_write(reactor &reactor, uint socket_id, std::span<char> buffer, size_t size, std::function<void(size_t)> handler){
+    fds[socket_id].events = POLLOUT;
+    fds[socket_id].revents = 0;
+    reactor::buf buf{buffer, size};
+    reactor.queues[socket_id].write_queue.push(std::pair(handler, buf));
+}
 
 /*
 size_t reactor::async_write_some(uint socket_id, std::span<char> buf, size_t size){// size parametr only for poll

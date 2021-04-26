@@ -2,7 +2,10 @@
 
 client::client(ushort port_, ushort port_2, uint method, std::string IP, std::size_t message_size)
     :proxy_port(port_),port_2_connect(port_2), method(method), IP(IP), message_size(message_size)
-    {}
+    {
+    inet_pton(AF_INET, IP.c_str(), &addr.sin_addr);
+    addr.sin_port = proxy_port;
+}
 client::client(client&& mv)
     :socket_id(mv.socket_id){
     mv.socket_id = -1;
@@ -30,53 +33,33 @@ void client::socket_create(){
         close(socket_id);
         return;
     }
+    std::cout<<addr.sin_port<<'\n';
+    std::cout<<port_2_connect<<'\n';
+    std::cout<<method<<'\n';
     std::cerr<<"socket "<<socket_id<<" created\n";
 }
-void client::async_connect(reactor &reactor){
-    connect(socket_id, (struct sockaddr *)&addr, sizeof (addr));
-    std::span<char>buffer;
-    size_t size = 0;
-    write(reactor, buffer, size, [&](size_t){getsockopt_(reactor);});
-}
-void client::getsockopt_(reactor &reactor){
-    std::span<char>buf;
-    if((error = getsockopt(socket_id, SOL_SOCKET, SO_ERROR, &buf, (uint*)buf.size())) < 0){// ??????????????????????????????????????
-        return;}// error on getsockopt?)))))))))))))
-    else if(memcmp(&buf, &error, 1)){//??????????
-            //async_connect();// if error try to poity nahyu
-        }
-    //write(reactor, )
-    //write_queue.push_back([&](size_t){socks5::socks5_handshake_write(*this);});
-    return;
-}
+
 uint client::get_socket_id() const{
     return socket_id;
+}
+uint client::get_method() const{
+    return method;
 }
 
 size_t client::dissconect(){
     return shutdown(socket_id, 2);
 }
-
-void client::read(reactor &reactor, std::span<char> buffer, size_t size, std::function<void(size_t)> handler){
-    reactor.fds[socket_id].events = POLLIN;
-    reactor::buf buf{buffer, size};
-    reactor.read_queue.push(std::pair(handler, buf));
-}
-void client::write(reactor &reactor, std::span<char> buffer, size_t size, std::function<void(size_t)> handler){
-    reactor.fds[socket_id].events = POLLOUT;
-    reactor::buf buf{buffer, size};
-    reactor.write_queue.push(std::pair(handler, buf));
-}
 void client::socks5_handshake_write(reactor &reactor){
-    std::vector<char> a = { 0x05, 0x01, static_cast<char>(method) };
-    write(reactor, a, 3, [&](size_t a){
+    buffer = { 0x05, 0x01, static_cast<char>(method) };
+    connect(socket_id, (const sockaddr*)&addr, sizeof(addr));
+    reactor.async_write(reactor, socket_id, buffer, 3, [&](size_t c){
 
         socks5_handshake_read(reactor);});
 }
 
 void client::socks5_handshake_read(reactor &reactor){
     std::vector<char>buffer(2);
-    read(reactor, buffer, 2, [&](size_t){
+    reactor.async_read(reactor, socket_id, buffer, 2, [&](size_t){
 
         if(buffer[0]!=0x05 || buffer[1]!=method){
             std::cerr<<"error on first answer from server\n";
@@ -89,14 +72,14 @@ void client::socks5_request(reactor &reactor){
     std::vector<char> buffer = { 0x05, 0x01, 0x00, 0x01 };
     memcpy(&buffer[4], &addr.sin_addr.s_addr, 4);
     memcpy(&buffer[8], &second_port, 2);
-    write(reactor, buffer, 10, [&](size_t){
+    reactor.async_write(reactor, socket_id, buffer, 10, [&](size_t){
 
         socks5_request_read(reactor);});
 }
 
 void client::socks5_request_read(reactor &reactor){
     std::vector<char>buffer(10);
-    read(reactor, buffer, 10, [&](size_t){
+    reactor.async_read(reactor, socket_id, buffer, 10, [&](size_t){
 
         if(buffer[1]!=0x00){
             std::cerr<<"error on first answer from server\n";
@@ -107,7 +90,7 @@ void client::socks5_request_read(reactor &reactor){
 }
 void client::do_write(reactor &reactor){
     std::vector<char>buffer(message_size, 0);
-    write(reactor, buffer, message_size, [&](size_t){
+    reactor.async_write(reactor,  socket_id, buffer, message_size, [&](size_t){
 
         do_read(reactor);});
 }
