@@ -17,9 +17,9 @@ int main()//int argc, char* argv[]
         std::size_t time=std::strtoul(argv[6],nullptr,0);*/
         ushort listen_port = 1234;
         ushort target_port = 1235;
-        double number_of_threads=1;
+        double number_of_threads=2;
         size_t buffer_size=8;
-        double number_of_clients=4;
+        double number_of_clients=2;
         size_t time=2000000;
 
 
@@ -46,15 +46,14 @@ int main()//int argc, char* argv[]
             }
         }
 
-        test_(client_[0], time);
-        /*for(std::size_t i=0;i<number_of_threads;i++)
+        for(std::size_t i=0;i<number_of_threads;i++)
         {
             thread_pool.emplace_back(std::thread(test_,std::ref(client_[i]),time));
         }
         for(auto &thread:thread_pool)
         {
             thread.join();
-        }*/
+        }
     }
     catch (std::exception& e)
     {

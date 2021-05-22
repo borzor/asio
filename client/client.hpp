@@ -19,8 +19,8 @@ public:
     ~client();
     void socket_create();
     uint get_socket_id() const;
-    uint get_method() const;
     size_t dissconect();
+    size_t shutdown();
     void socks5_handshake_write(reactor &reactor);
     void socks5_handshake_read(reactor &reactor);
     void socks5_request(reactor &reactor);
