@@ -1,4 +1,4 @@
-#include <iostream>
+    #include <iostream>
 #include <poll.h>
 #include <sys/socket.h>
 #include <cstring>
@@ -18,12 +18,14 @@ private:
         std::queue<std::pair<std::function<void(size_t)>, std::vector<char>&>> write_queue;
     };
     std::map<int, queues_> queues;
-    std::map<uint32_t, pollfd> fds_;
+    std::map<uint32_t, uint32_t> fds_map;
+    std::vector<pollfd> fds_;
     std::vector<char>buff;
 public:
     reactor(std::vector<pollfd> fds);
     void async_read(reactor &reactor, uint socket_id, std::vector<char> &buffer, std::function<void (size_t)> handler);
     void async_write(reactor &reactor, uint socket_id, std::vector<char> &buffer, std::function<void(size_t)> handler);
+    void re(uint32_t socket, uint32_t last_socket);
     void run();
     friend class client;
 };

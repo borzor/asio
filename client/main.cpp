@@ -19,7 +19,7 @@ int main()//int argc, char* argv[]
         ushort target_port = 1235;
         double number_of_threads=2;
         size_t buffer_size=8;
-        double number_of_clients=2;
+        double number_of_clients=8;
         size_t time=2000000;
 
 
@@ -45,7 +45,7 @@ int main()//int argc, char* argv[]
                 client_[static_cast<std::size_t>(i)].emplace_back(client(listen_port, target_port, 0x00, "127.0.0.1", buffer_size));
             }
         }
-
+        //test_(client_[0], time);
         for(std::size_t i=0;i<number_of_threads;i++)
         {
             thread_pool.emplace_back(std::thread(test_,std::ref(client_[i]),time));
