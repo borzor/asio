@@ -9,8 +9,7 @@ reactor::reactor(std::vector<pollfd> fds):fds_(fds)
 
 void reactor::run(){
     for(;;){
-        int a = poll(&fds_[0], fds_.size(), -1);
-        if(a > 0){
+        if(poll(&fds_[0], fds_.size(), -1) > 0){
             for(auto &i: fds_){
                 if(i.revents != 0){
                     if((i.revents & POLLOUT)){//WRITE
@@ -26,26 +25,27 @@ void reactor::run(){
                 }
             }
         }
-        else{
-            std::cout<<a<<" - a\n";
-        }
     }
 }
-void reactor::async_read(reactor &reactor, uint socket_id, std::vector<char> &buffer, std::function<void(size_t)> handler){
+void reactor::async_read(reactor &reactor, const uint socket_id, std::vector<char> &buffer, std::function<void(size_t)> handler){
     fds_[fds_map[socket_id]].events = POLLIN;
     fds_[fds_map[socket_id]].revents = 0;
     reactor.queues[socket_id].read_queue.push(std::pair(handler, std::ref(buffer)));
 }
-void reactor::async_write(reactor &reactor, uint socket_id, std::vector<char> &buffer, std::function<void(size_t)> handler){
+void reactor::async_write(reactor &reactor, const uint socket_id, std::vector<char> &buffer, std::function<void(size_t)> handler){
     fds_[fds_map[socket_id]].events = POLLOUT;
     fds_[fds_map[socket_id]].revents = 0;
     reactor.queues[socket_id].write_queue.push(std::pair(handler, std::ref(buffer)));
 }
 
-void reactor::re(uint32_t socket, uint32_t last_socket){
+void reactor::re(const uint32_t socket, const uint32_t last_socket){
     fds_[fds_map[last_socket]].fd = socket;
     uint32_t index = fds_map.find(last_socket)->second;
     fds_map.erase(fds_map.find(last_socket));
+    if(socket != last_socket){
+        queues[socket] = queues[last_socket];
+        queues.erase(queues.find(last_socket));
+    }
     fds_map[socket] = index;
     std::cout<<"new\n";
 }

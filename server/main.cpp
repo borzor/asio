@@ -5,7 +5,7 @@ int main(int argc, char* argv[])
 {
   try
   {
-    if (argc != 3)
+    if (argc != 3)//1234 on default
     {
       throw std::runtime_error("Correct format: <listen-port> <number_of_threads>");
     }
@@ -21,6 +21,7 @@ int main(int argc, char* argv[])
     }
     std::vector<std::thread>thread_pool;
     boost::asio::io_context io_context(number_of_treads);
+
     server server_(io_context, port);
     for(size_t i = 0; i<number_of_treads;i++){thread_pool.emplace_back(std::thread([&](){io_context.run();}));};
     for(auto &thread:thread_pool){

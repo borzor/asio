@@ -6,6 +6,7 @@
 #include <string>
 #include <boost/endian/conversion.hpp>
 #include <thread>
+
 using boost::asio::ip::tcp;
 class session: public std::enable_shared_from_this<session>
 {
@@ -34,7 +35,6 @@ private:
     void first_greetings()
      {
          auto self(shared_from_this());
-         std::cerr<<"first_greetings\n";
          boost::asio::async_read(socket_, boost::asio::buffer(buffer_2, 2),
                                  [this, self](boost::system::error_code ec, std::size_t)
          {
@@ -46,13 +46,11 @@ private:
                  }
                  uint amount_of_number_auth = buffer_2[1];
                  first_greetings_2(amount_of_number_auth);
-
              }
          });
      }
      void first_greetings_2(uint numb){
          auto self(shared_from_this());
-         std::cerr<<"first_greetings_2\n";
          boost::asio::async_read(socket_, boost::asio::buffer(buffer_2, numb),
                                  [this, self, numb](boost::system::error_code ec, std::size_t)
          {
@@ -78,7 +76,6 @@ private:
      }
      void first_answering(){
          auto self(shared_from_this());
-         std::cerr<<"first_answering\n";
          boost::asio::async_write(socket_, boost::asio::buffer(buffer_, 2),
                                   [this, self](boost::system::error_code ec, std::size_t)
          {
@@ -96,10 +93,9 @@ private:
      }
      void log_pas(){
          auto self = shared_from_this();
-         std::cerr<<"log_pas\n";
          boost::asio::async_read(socket_, boost::asio::buffer(buffer_, 2),
                  [this,self](boost::system::error_code ec, std::size_t)
-         {//std::wcerr<<buffer_[1]<<'\n';
+         {
              uint amount_in_log = buffer_[1];
              if(!ec)
                  boost::asio::async_read(socket_,boost::asio::buffer(buffer_,amount_in_log+1),
@@ -114,18 +110,14 @@ private:
                             if(!ec)
                             {
                                 std::string PASSWD(&buffer_2[0], &buffer_2[amount_in_pas]);
-                                std::cerr<<(UNAME=="admin")<<' '<<UNAME<<'\n';
-                                std::cerr<<(PASSWD=="password")<<' '<<PASSWD<<'\n';
                                 std::map<std::string,std::string>::iterator check = logpas.find(UNAME);
 
                                 if((check != logpas.end())&&(check->second==PASSWD))//if he exist in map and his second element==PASSDW
                                 {
-                                    std::cerr<<"ura\n";
                                     buffer_2[0]=0x01;buffer_2[1]=0x00;
                                     boost::asio::async_write(socket_, boost::asio::buffer(buffer_2, 2),
-                                                             [this, self](boost::system::error_code ec, std::size_t len)
+                                                             [this, self](boost::system::error_code ec, std::size_t)
                                     {
-                                        std::cerr<<len<<'\n';
                                         if(!ec)
                                             read_request();
                                     });
@@ -138,7 +130,6 @@ private:
      }
     void read_request(){
         auto self(shared_from_this());
-        std::cerr<<"read_request\n";
         boost::asio::async_read(socket_, boost::asio::buffer(buffer_2, 4),
                                      [this, self](boost::system::error_code ec, std::size_t)
         {
@@ -175,7 +166,6 @@ private:
     }
     void second_read_request(size_t counter){
         auto self(shared_from_this());
-        std::cerr<<"second_read_request\n";
         boost::asio::async_read(socket_, boost::asio::buffer(buffer_, counter+2),
                                      [this, self, counter](boost::system::error_code ec, std::size_t)
         {
@@ -218,7 +208,6 @@ private:
     }
     void resolve(){
         auto self(shared_from_this());
-        std::cerr<<"resolve\n";
         resolver_.async_resolve(tcp::resolver::query({hostname, port}),
             [this, self](const boost::system::error_code& ec, boost::asio::ip::tcp::resolver::results_type result)
             {
@@ -230,7 +219,6 @@ private:
     }
     void first_connect(tcp::resolver::results_type results){
         auto self(shared_from_this());
-        std::cerr<<"first_connect\n";
         boost::asio::async_connect(socket_server, results,
                                    [this, self](const boost::system::error_code& ec, const tcp::endpoint&)
         {
@@ -263,7 +251,6 @@ private:
     }
     void second_response(){
         auto self(shared_from_this());
-        std::cerr<<"second_response\n";
         buffer_[0] = 0x05; buffer_[2] = 0x00; buffer_[3] = 0x01;
         u_char net_port = socket_server.remote_endpoint().port();
         boost::endian::endian_store<uint32_t, 4, boost::endian::order::little>((u_char*)socket_server.remote_endpoint().address().to_v4().to_string().c_str(),buffer_[4]);
@@ -298,7 +285,7 @@ private:
                 socket_server.shutdown(boost::asio::ip::tcp::socket::shutdown_receive);
             }
 
-            std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
+            //std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
         });
     }
     void read_from_server(){

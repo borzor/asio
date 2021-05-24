@@ -11,7 +11,7 @@ private:
     uint method;
     std::string IP;
     size_t message_size;
-    struct sockaddr_in addr;//local host
+    struct sockaddr_in addr;
     std::vector<char>buffer;
     uint32_t last_socket;
 public:
@@ -19,13 +19,12 @@ public:
     client(client&& mv);
     ~client();
     void socket_create();
-    uint get_socket_id() const;
-    size_t dissconect();
+    size_t get_socket_id() const;
+    size_t dissconect() const;
     void socks5_handshake_write(reactor &reactor, bool flag);
     void socks5_handshake_read(reactor &reactor);
     void socks5_request(reactor &reactor);
     void socks5_request_read(reactor &reactor);
     void do_write(reactor &reactor);
     void do_read(reactor &reactor);
-    friend class reactor;
 };
