@@ -1,3 +1,4 @@
+<sub><sup>this project created for educational purposes</sup></sub>
 #  SOCKS5 Server 
 Socks5[(RFC)](https://tools.ietf.org/html/rfc1928) multithread asynchronous proxy server with using boost::asio callbacks
 
@@ -46,4 +47,3 @@ Run the program
 ./client  [listen-port] [target-port] [number_of_threads] [buffer_size] [number_of_clients] [time_on_test]
 ```
 
-<sub><sup> P.S. this project created for educational purposes and it may be incorrect</sup></sub>
