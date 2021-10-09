@@ -278,14 +278,15 @@ private:
             }
             else if (ec != boost::asio::error::eof)
             {
-                socket_.close(); socket_server.close();
+                if(socket_.is_open())
+                    socket_.close();
+                if(socket_server.is_open())
+                    socket_server.close();
             }
             else
             {
                 socket_server.shutdown(boost::asio::ip::tcp::socket::shutdown_receive);
             }
-
-            //std::cerr<<ec.message()<<"\n"<<"in thread "<<std::this_thread::get_id()<<'\n';
         });
     }
     void read_from_server(){
@@ -297,11 +298,14 @@ private:
             }
             else if (ec != boost::asio::error::eof)
             {
-                socket_.close(); socket_server.close();
+                if(socket_.is_open())
+                    socket_.close();
+                if(socket_server.is_open())
+                    socket_server.close();
             }
             else
             {
-                socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_receive);
+                //socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_receive);
             }
 
         });

@@ -11,12 +11,9 @@ void test_(std::vector<client>& client_, std::size_t time){
     }
     reactor reactor(fds);
     for(auto i = 0; i < fds.size(); i++){
-        client_[i].socks5_handshake_write(reactor, 0);
+        client_[i].socks5_handshake_write(reactor, false);
     }
-    auto timer = std::chrono::steady_clock::now();
-    while(std::chrono::steady_clock::now()<timer+std::chrono::seconds(time)){
-        reactor.run();
-        }
-    }
+    reactor.run(time);
+}
 
 

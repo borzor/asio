@@ -20,11 +20,13 @@ private:
     std::map<int, queues_> queues;
     std::map<uint32_t, uint32_t> fds_map;
     std::vector<pollfd> fds_;
+    std::size_t counter;
 public:
     reactor(std::vector<pollfd> fds);
+    ~reactor();
     void async_read(reactor &reactor, const uint socket_id, std::vector<char> &buffer, std::function<void (size_t)> handler);
     void async_write(reactor &reactor, const uint socket_id, std::vector<char> &buffer, std::function<void(size_t)> handler);
     void re(const uint32_t socket, const uint32_t last_socket);
-    void run();
+    void run(const size_t time);
 };
 

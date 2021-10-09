@@ -7,7 +7,7 @@ private:
     ushort proxy_port;
     ushort port_2_connect;
     uint error;
-    uint socket_id;
+    int socket_id;
     uint method;
     std::string IP;
     size_t message_size;
@@ -19,8 +19,8 @@ public:
     client(client&& mv);
     ~client();
     void socket_create();
-    size_t get_socket_id() const;
-    size_t dissconect() const;
+    int get_socket_id() const;
+    void disconnect() const;
     void socks5_handshake_write(reactor &reactor, bool flag);
     void socks5_handshake_read(reactor &reactor);
     void socks5_request(reactor &reactor);

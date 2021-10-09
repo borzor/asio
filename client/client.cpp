@@ -2,21 +2,19 @@
 #include <memory>
 
 client::client(ushort port_, ushort port_2, uint method, std::string IP, std::size_t message_size)
-    :proxy_port(port_),port_2_connect(port_2), method(method), IP(IP), message_size(message_size)
-    {
+        :proxy_port(port_),port_2_connect(port_2), method(method), IP(IP), message_size(message_size)
+{
     memset(&addr, 0, sizeof(addr));
     inet_pton(AF_INET, IP.c_str(), &addr.sin_addr.s_addr);
     addr.sin_port = htons(proxy_port);
     addr.sin_family = AF_INET;
 }
 client::client(client&& mv)
-    :socket_id(mv.socket_id),proxy_port(mv.proxy_port),port_2_connect(mv.port_2_connect), method(mv.method), IP(mv.IP), message_size(mv.message_size), addr(mv.addr)
-    {}
+        :socket_id(mv.socket_id),proxy_port(mv.proxy_port),port_2_connect(mv.port_2_connect), method(mv.method), IP(mv.IP), message_size(mv.message_size), addr(mv.addr)
+{}
 client::~client()
 {
-    if(socket_id != -1){
-        close(socket_id);
-    }
+    disconnect();
 }
 
 void client::socket_create(){
@@ -37,12 +35,14 @@ void client::socket_create(){
     }
 }
 
-size_t client::get_socket_id() const{
+int client::get_socket_id() const{
     return socket_id;
 }
 
-size_t client::dissconect() const{
-    return close(socket_id);
+void client::disconnect() const{
+    if(socket_id != -1){
+        close(socket_id);
+    }
 }
 void client::socks5_handshake_write(reactor &reactor, bool flag){
     buffer = { 0x05, 0x01, static_cast<char>(method) };
@@ -53,7 +53,7 @@ void client::socks5_handshake_write(reactor &reactor, bool flag){
     connect(socket_id, (const sockaddr*)&addr, sizeof(addr));
 
     reactor.async_write(reactor, socket_id, std::ref(buffer), [&](size_t){
-    socks5_handshake_read(reactor);});
+        socks5_handshake_read(reactor);});
 }
 
 void client::socks5_handshake_read(reactor &reactor){
@@ -95,103 +95,9 @@ void client::do_read(reactor &reactor){
     std::fill(buffer.begin(), buffer.end(), 0);
     reactor.async_read(reactor, socket_id, std::ref(buffer), [&](size_t){
         last_socket = socket_id;
-        dissconect();
+        disconnect();
         socket_create();
-        socks5_handshake_write(reactor, 1);
+        socks5_handshake_write(reactor, true);
     });
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

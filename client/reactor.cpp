@@ -1,14 +1,21 @@
 #include "reactor.hpp"
-
+#include <chrono>
+#include <thread>
 reactor::reactor(std::vector<pollfd> fds):fds_(fds)
 {
+    counter = 0;
     for(size_t i = 0; i < fds.size(); ++i){
         fds_map[fds[i].fd] = i;
     }
 }
 
-void reactor::run(){
-    for(;;){
+reactor::~reactor(){
+    std::cout<<"number of thread - "<<std::this_thread::get_id() <<"\tnumber of success operations - "<<counter<<"\n";
+}
+
+void reactor::run(size_t time){
+    auto timer = std::chrono::steady_clock::now();
+    while(std::chrono::steady_clock::now() < timer+std::chrono::seconds(time)){
         if(poll(&fds_[0], fds_.size(), -1) > 0){
             for(auto &i: fds_){
                 if(i.revents != 0){
@@ -47,5 +54,5 @@ void reactor::re(const uint32_t socket, const uint32_t last_socket){
         queues.erase(queues.find(last_socket));
     }
     fds_map[socket] = index;
-    std::cout<<"new\n";
+    counter++;
 }
